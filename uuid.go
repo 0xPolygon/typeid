@@ -33,7 +33,6 @@ func ParseUUID[P Prefixer](s string) (UUID[P], error) {
 	if err != nil {
 		return UUID[P]{}, err
 	}
-
 	b, err := decodeBase32UUID(suffix)
 	if err != nil {
 		return UUID[P]{}, err
@@ -45,10 +44,20 @@ func ParseUUID[P Prefixer](s string) (UUID[P], error) {
 	return UUID[P]{val: u}, nil
 }
 
-func (id UUID[P]) String() string         { return formatID[P](encodeBase32UUID(id.val)) }
-func (id UUID[P]) UUID() uuid.UUID        { return id.val }
-func (id UUID[P]) IsZero() bool           { return id.val == uuid.UUID{} }
-func (id UUID[P]) MarshalText() ([]byte, error) { return []byte(id.String()), nil }
+func (id UUID[P]) appendText(dst []byte) []byte {
+	var p P
+	dst = growSlice(dst, len(p.Prefix())+1+uuidSuffixLen)
+	return appendBase32UUID(appendID[P](dst), id.val)
+}
+func (id UUID[P]) String() string { return string(id.appendText(nil)) }
+func (id UUID[P]) UUID() uuid.UUID              { return id.val }
+func (id UUID[P]) IsZero() bool                 { return id.val == uuid.UUID{} }
+func (id UUID[P]) MarshalText() ([]byte, error) {
+	if id.IsZero() {
+		return nil, ErrZeroUUID
+	}
+	return id.appendText(nil), nil
+}
 
 func (id *UUID[P]) UnmarshalText(data []byte) error {
 	parsed, err := ParseUUID[P](string(data))
@@ -59,26 +68,37 @@ func (id *UUID[P]) UnmarshalText(data []byte) error {
 	return nil
 }
 
-func (id UUID[P]) Value() (driver.Value, error) { return id.val.String(), nil }
+func (id UUID[P]) Value() (driver.Value, error) {
+	if id.IsZero() {
+		return nil, ErrZeroUUID
+	}
+	return id.val.String(), nil
+}
 
-func (id *UUID[P]) Scan(src any) error {
+func (id *UUID[P]) Scan(src any) (err error) {
+	var u uuid.UUID
 	switch v := src.(type) {
 	case string:
-		u, err := uuid.Parse(v)
-		if err != nil {
+		if u, err = uuid.Parse(v); err != nil {
 			return err
 		}
-		id.val = u
 	case []byte:
-		u, err := uuid.ParseBytes(v)
-		if err != nil {
-			return err
+		switch {
+		case len(v) == 16:
+			copy(u[:], v)
+		default:
+			if u, err = uuid.ParseBytes(v); err != nil {
+				return err
+			}
 		}
-		id.val = u
 	case [16]byte:
-		id.val = uuid.UUID(v)
+		u = uuid.UUID(v)
 	default:
 		return fmt.Errorf("typeid: cannot scan %T into UUID", src)
 	}
+	if u.Version() != 7 {
+		return ErrOnlyV7
+	}
+	id.val = u
 	return nil
 }

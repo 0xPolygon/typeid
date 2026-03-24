@@ -11,8 +11,11 @@ type Prefixer interface {
 }
 
 var (
-	ErrOnlyV7      = errors.New("typeid: only UUIDv7 is supported")
-	ErrNegativeInt = errors.New("typeid: int64 must be non-negative")
+	ErrOnlyV7         = errors.New("typeid: only UUIDv7 is supported")
+	ErrZeroUUID       = errors.New("typeid: zero UUID")
+	ErrNonPositiveInt = errors.New("typeid: non-positive Int64")
+	ErrOverflowBase32 = errors.New("typeid: base32 overflow at pos 0")
+	ErrOverflowInt64  = errors.New("typeid: value overflows int64")
 )
 
 const (
@@ -26,26 +29,27 @@ func splitTypeid[P Prefixer](s string, suffixLen int) (suffix string, err error)
 	var p P
 	want := p.Prefix()
 
-	// Need at least: 1 char prefix + "_" + suffix
-	minLen := 1 + 1 + suffixLen
-	if len(s) < minLen {
-		return "", fmt.Errorf("typeid: invalid format: %q", s)
-	}
-
 	sep := len(s) - suffixLen - 1
-	if s[sep] != '_' {
+	if sep < 0 || s[sep] != '_' {
 		return "", fmt.Errorf("typeid: invalid format: %q", s)
 	}
-
-	prefix := s[:sep]
-	if prefix != want {
-		return "", fmt.Errorf("typeid: prefix mismatch: expected %q, got %q", want, prefix)
+	if s[:sep] != want {
+		return "", fmt.Errorf("typeid: prefix mismatch: expected %q, got %q", want, s[:sep])
 	}
-
 	return s[sep+1:], nil
 }
 
-func formatID[P Prefixer](suffix string) string {
+func growSlice(dst []byte, n int) []byte {
+	if cap(dst)-len(dst) >= n {
+		return dst
+	}
+	buf := make([]byte, len(dst), len(dst)+n)
+	copy(buf, dst)
+	return buf
+}
+
+func appendID[P Prefixer](dst []byte) []byte {
 	var p P
-	return p.Prefix() + "_" + suffix
+	dst = append(dst, p.Prefix()...)
+	return append(dst, '_')
 }

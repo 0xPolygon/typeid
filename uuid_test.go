@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/typeid"
 	"github.com/google/uuid"
+
+	"github.com/go-chi/typeid"
 )
 
 func ExampleNewUUID() {
@@ -42,10 +43,10 @@ func ExampleParseUUID() {
 }
 
 func ExampleParseUUID_wrongPrefix() {
-	_, err := typeid.ParseUUID[userPrefix]("org_01h455vb4pex5vsknk084sn02q")
+	_, err := typeid.ParseUUID[userPrefix]("team_01h455vb4pex5vsknk084sn02q")
 	fmt.Println(err)
 	// Output:
-	// typeid: prefix mismatch: expected "user", got "org"
+	// typeid: prefix mismatch: expected "user", got "team"
 }
 
 func ExampleUUIDFrom() {
@@ -120,6 +121,141 @@ func ExampleUUID_Scan() {
 	// Output:
 	// true
 	// true
+}
+
+func TestUUID_RejectZero(t *testing.T) {
+	var zero UserID
+
+	if _, err := zero.MarshalText(); err == nil {
+		t.Error("MarshalText should reject zero")
+	}
+	if _, err := zero.Value(); err == nil {
+		t.Error("Value should reject zero")
+	}
+}
+
+func TestParseUUID_Invalid(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"empty", ""},
+		{"no underscore", "abc"},
+		{"suffix too short", "user_abc"},
+		{"suffix too long", "user_01h455vb4pex5vsknk084sn02qq"},
+		{"invalid base32 char", "user_01h455vb4pex5vsknk084sn0!q"},
+		{"overflow first char", "user_81h455vb4pex5vsknk084sn02q"},
+		{"wrong prefix", "org_01h455vb4pex5vsknk084sn02q"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := typeid.ParseUUID[userPrefix](tt.input); err == nil {
+				t.Errorf("expected error for %q", tt.input)
+			}
+		})
+	}
+}
+
+func TestUUID_ScanRawBytes(t *testing.T) {
+	id, _ := typeid.NewUUID[userPrefix]()
+	raw := id.UUID()
+
+	var scanned UserID
+	if err := scanned.Scan(raw[:]); err != nil {
+		t.Fatalf("Scan raw 16-byte slice: %v", err)
+	}
+	if scanned != id {
+		t.Errorf("got %s, want %s", scanned, id)
+	}
+}
+
+func TestUUID_ScanInvalid(t *testing.T) {
+	var id UserID
+
+	// wrong type
+	if err := id.Scan(123); err == nil {
+		t.Error("Scan should reject int")
+	}
+	if err := id.Scan(true); err == nil {
+		t.Error("Scan should reject bool")
+	}
+
+	// non-v7 UUID (v4)
+	v4 := uuid.New()
+	if err := id.Scan(v4.String()); err == nil {
+		t.Error("Scan should reject non-v7 UUID string")
+	}
+	if err := id.Scan(v4[:]); err == nil {
+		t.Error("Scan should reject non-v7 UUID bytes")
+	}
+	if err := id.Scan([16]byte(v4)); err == nil {
+		t.Error("Scan should reject non-v7 [16]byte")
+	}
+
+	// malformed string
+	if err := id.Scan("not-a-uuid"); err == nil {
+		t.Error("Scan should reject malformed string")
+	}
+}
+
+func TestUUID_KnownVector(t *testing.T) {
+	// UUIDv7: 01932c1c-e400-7360-8123-456789abcdef
+	raw := uuid.Must(uuid.FromBytes([]byte{
+		0x01, 0x93, 0x2c, 0x1c, 0xe4, 0x00,
+		0x73, 0x60,
+		0x81, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
+	}))
+	id, err := typeid.UUIDFrom[userPrefix](raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const want = "user_01jcp1ss00edg828t5cy4tqkff"
+	if got := id.String(); got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+
+	parsed, err := typeid.ParseUUID[userPrefix](want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.UUID() != raw {
+		t.Errorf("roundtrip UUID mismatch: got %s, want %s", parsed.UUID(), raw)
+	}
+}
+
+func BenchmarkUUID_String(b *testing.B) {
+	id, err := typeid.NewUUID[userPrefix]()
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		_ = id.String()
+	}
+}
+
+func BenchmarkUUID_MarshalText(b *testing.B) {
+	id, err := typeid.NewUUID[userPrefix]()
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		id.MarshalText() //nolint:errcheck
+	}
+}
+
+func BenchmarkUUID_Parse(b *testing.B) {
+	id, err := typeid.NewUUID[userPrefix]()
+	if err != nil {
+		b.Fatal(err)
+	}
+	s := id.String()
+	b.ResetTimer()
+	for b.Loop() {
+		typeid.ParseUUID[userPrefix](s) //nolint:errcheck
+	}
 }
 
 func TestUUID_Sortable(t *testing.T) {

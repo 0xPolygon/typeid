@@ -5,7 +5,6 @@ import (
 	"database/sql/driver"
 	"encoding"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/go-chi/typeid"
@@ -41,19 +40,7 @@ var (
 	_ sql.Scanner              = (*OrgID)(nil)
 )
 
-// Desired usage (from README).
 func Example() {
-	type Org struct {
-		ID   OrgID  `json:"id"`
-		Name string `json:"name"`
-	}
-
-	type User struct {
-		ID    UserID `json:"id"`
-		OrgID OrgID  `json:"org_id"`
-		Name  string `json:"name"`
-	}
-
 	orgID, err := typeid.NewInt64[orgPrefix]()
 	if err != nil {
 		panic(err)
@@ -69,7 +56,4 @@ func Example() {
 	// Output:
 	// true
 	// true
-
-	log.Println(orgID.String())
-	log.Println(userID.String())
 }

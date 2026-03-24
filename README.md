@@ -63,7 +63,7 @@ Parsing validates the prefix at compile time — passing `"org_..."` to `ParseUU
 
 ```go
 id, err := typeid.UUIDFrom[userPrefix](rawUUID)   // rejects non-UUIDv7
-id, err := typeid.Int64From[orgPrefix](rawInt64)   // rejects negative
+id, err := typeid.Int64From[orgPrefix](rawInt64)   // rejects non-positive
 ```
 
 ### Use in structs
@@ -98,6 +98,21 @@ Both types implement:
 ```
 
 Stored as Postgres `BIGINT`. Collision table: 10 IDs/sec → ~1 per 7,500 days; 100/sec → ~1 per 1.8 hours; 1,000/sec → ~1 per 65 seconds.
+
+## Benchmarks
+
+Apple M4 Pro, Go 1.26.1:
+
+```
+BenchmarkInt64_String         ~19 ns/op    24 B/op    1 allocs/op
+BenchmarkInt64_MarshalText    ~18 ns/op    24 B/op    1 allocs/op
+BenchmarkInt64_Parse          ~18 ns/op     0 B/op    0 allocs/op
+BenchmarkUUID_String          ~24 ns/op    32 B/op    1 allocs/op
+BenchmarkUUID_MarshalText     ~23 ns/op    32 B/op    1 allocs/op
+BenchmarkUUID_Parse           ~33 ns/op     0 B/op    0 allocs/op
+```
+
+Parse is zero-allocation. Encode paths do a single allocation for the output buffer.
 
 # License
 

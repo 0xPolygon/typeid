@@ -41,10 +41,10 @@ func ExampleParseInt64() {
 }
 
 func ExampleParseInt64_wrongPrefix() {
-	_, err := typeid.ParseInt64[orgPrefix]("user_0h455vb4pex5v")
+	_, err := typeid.ParseInt64[orgPrefix]("foo_0h455vb4pex5v")
 	fmt.Println(err)
 	// Output:
-	// typeid: prefix mismatch: expected "org", got "user"
+	// typeid: prefix mismatch: expected "org", got "foo"
 }
 
 func ExampleInt64From() {
@@ -60,11 +60,14 @@ func ExampleInt64From() {
 	// true
 }
 
-func ExampleInt64From_rejectsNegative() {
+func ExampleInt64From_rejectsNonPositive() {
 	_, err := typeid.Int64From[orgPrefix](-1)
 	fmt.Println(err)
+	_, err = typeid.Int64From[orgPrefix](0)
+	fmt.Println(err)
 	// Output:
-	// typeid: int64 must be non-negative
+	// typeid: non-positive Int64
+	// typeid: non-positive Int64
 }
 
 func ExampleInt64_IsZero() {
@@ -118,6 +121,121 @@ func ExampleInt64_Scan() {
 	// Output:
 	// true
 	// true
+}
+
+func TestInt64_RejectZeroAndNegative(t *testing.T) {
+	var zero OrgID
+
+	if _, err := zero.MarshalText(); err == nil {
+		t.Error("MarshalText should reject zero")
+	}
+	if _, err := zero.Value(); err == nil {
+		t.Error("Value should reject zero")
+	}
+
+	var scanned OrgID
+	if err := scanned.Scan(int64(0)); err == nil {
+		t.Error("Scan should reject zero")
+	}
+	if err := scanned.Scan(int64(-1)); err == nil {
+		t.Error("Scan should reject negative")
+	}
+	if err := scanned.Scan(int(-1)); err == nil {
+		t.Error("Scan should reject negative int")
+	}
+}
+
+func TestParseInt64_Invalid(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"empty", ""},
+		{"no underscore", "abc"},
+		{"suffix too short", "org_abc"},
+		{"suffix too long", "org_0h455vb4pex5vv"},
+		{"invalid base32 char", "org_0h455vb4pex!v"},
+		{"overflow first char", "org_8h455vb4pex5v"},
+		{"zero", "org_0000000000000"},
+		{"wrong prefix", "user_0h455vb4pex5v"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := typeid.ParseInt64[orgPrefix](tt.input); err == nil {
+				t.Errorf("expected error for %q", tt.input)
+			}
+		})
+	}
+}
+
+func TestInt64_ScanInvalid(t *testing.T) {
+	var id OrgID
+
+	if err := id.Scan("hello"); err == nil {
+		t.Error("Scan should reject string")
+	}
+	if err := id.Scan(true); err == nil {
+		t.Error("Scan should reject bool")
+	}
+	if err := id.Scan(3.14); err == nil {
+		t.Error("Scan should reject float64")
+	}
+}
+
+func TestInt64_KnownVector(t *testing.T) {
+	// timestamp=1700000000000ms, random=12345
+	raw := int64(1700000000000<<15) | 12345
+	id, err := typeid.Int64From[orgPrefix](raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const want = "org_01hf7yat00c1s"
+	if got := id.String(); got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+
+	parsed, err := typeid.ParseInt64[orgPrefix](want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Int64() != raw {
+		t.Errorf("roundtrip Int64 mismatch: got %d, want %d", parsed.Int64(), raw)
+	}
+}
+
+func BenchmarkInt64_String(b *testing.B) {
+	id, err := typeid.NewInt64[orgPrefix]()
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		_ = id.String()
+	}
+}
+
+func BenchmarkInt64_MarshalText(b *testing.B) {
+	id, err := typeid.NewInt64[orgPrefix]()
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		id.MarshalText() //nolint:errcheck
+	}
+}
+
+func BenchmarkInt64_Parse(b *testing.B) {
+	id, err := typeid.NewInt64[orgPrefix]()
+	if err != nil {
+		b.Fatal(err)
+	}
+	s := id.String()
+	b.ResetTimer()
+	for b.Loop() {
+		typeid.ParseInt64[orgPrefix](s) //nolint:errcheck
+	}
 }
 
 func TestInt64_Sortable(t *testing.T) {

@@ -27,9 +27,9 @@ const randomBits = 15
 // the birthday problem: ~R²/65,536,000 expected collisions per second for R
 // total IDs/sec across all servers.
 //
-//	    10 IDs/sec → ~1 collision per 7,500 days
-//	   100 IDs/sec → ~1 collision per 1.8 hours
-//	 1,000 IDs/sec → ~1 collision per 65 seconds
+//	   10 IDs/sec → ~1 collision per 7,500 days
+//	  100 IDs/sec → ~1 collision per 1.8 hours
+//	1,000 IDs/sec → ~1 collision per 65 seconds
 //
 // Protect with a UNIQUE constraint and retry on conflict. For high-throughput
 // resources use [UUID] instead.
@@ -59,8 +59,8 @@ func NewInt64[P Prefixer]() (Int64[P], error) {
 }
 
 func Int64From[P Prefixer](v int64) (Int64[P], error) {
-	if v < 0 {
-		return Int64[P]{}, ErrNegativeInt
+	if v <= 0 {
+		return Int64[P]{}, ErrNonPositiveInt
 	}
 	return Int64[P]{val: v}, nil
 }
@@ -70,18 +70,27 @@ func ParseInt64[P Prefixer](s string) (Int64[P], error) {
 	if err != nil {
 		return Int64[P]{}, err
 	}
-
 	v, err := decodeBase32Int64(suffix)
 	if err != nil {
 		return Int64[P]{}, err
 	}
-	return Int64[P]{val: v}, nil
+	return Int64From[P](v)
 }
 
-func (id Int64[P]) String() string         { return formatID[P](encodeBase32Int64(id.val)) }
-func (id Int64[P]) Int64() int64           { return id.val }
-func (id Int64[P]) IsZero() bool           { return id.val == 0 }
-func (id Int64[P]) MarshalText() ([]byte, error) { return []byte(id.String()), nil }
+func (id Int64[P]) appendText(dst []byte) []byte {
+	var p P
+	dst = growSlice(dst, len(p.Prefix())+1+int64SuffixLen)
+	return appendBase32Int64(appendID[P](dst), id.val)
+}
+func (id Int64[P]) String() string { return string(id.appendText(nil)) }
+func (id Int64[P]) Int64() int64                 { return id.val }
+func (id Int64[P]) IsZero() bool                 { return id.val == 0 }
+func (id Int64[P]) MarshalText() ([]byte, error) {
+	if id.val <= 0 {
+		return nil, ErrNonPositiveInt
+	}
+	return id.appendText(nil), nil
+}
 
 func (id *Int64[P]) UnmarshalText(data []byte) error {
 	parsed, err := ParseInt64[P](string(data))
@@ -92,16 +101,26 @@ func (id *Int64[P]) UnmarshalText(data []byte) error {
 	return nil
 }
 
-func (id Int64[P]) Value() (driver.Value, error) { return id.val, nil }
+func (id Int64[P]) Value() (driver.Value, error) {
+	if id.val <= 0 {
+		return nil, ErrNonPositiveInt
+	}
+	return id.val, nil
+}
 
 func (id *Int64[P]) Scan(src any) error {
-	switch v := src.(type) {
+	var v int64
+	switch sv := src.(type) {
 	case int64:
-		id.val = v
+		v = sv
 	case int:
-		id.val = int64(v)
+		v = int64(sv)
 	default:
 		return fmt.Errorf("typeid: cannot scan %T into Int64", src)
 	}
+	if v <= 0 {
+		return ErrNonPositiveInt
+	}
+	id.val = v
 	return nil
 }
