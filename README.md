@@ -2,6 +2,8 @@
 
 Prefixed, base32-encoded, k-sortable identifiers for Go. Inspired by [Stripe API IDs](https://stripe.com/docs/api) and the [TypeID spec](https://github.com/jetify-com/typeid).
 
+[![GoDoc Widget]][GoDoc]
+
 ## Identifier format
 
 ```
@@ -117,3 +119,6 @@ Parse is zero-allocation. Encode paths do a single allocation for the output buf
 # License
 
 [MIT License](./LICENSE)
+
+[GoDoc]: https://pkg.go.dev/github.com/go-chi/typeid
+[GoDoc Widget]: https://godoc.org/github.com/go-chi/typeid?status.svg
