@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/go-chi/typeid"
+	"github.com/0xPolygon/typeid"
 )
 
 type Mode string

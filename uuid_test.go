@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/go-chi/typeid"
+	"github.com/0xPolygon/typeid"
 )
 
 func ExampleNewUUID() {
