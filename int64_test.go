@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/typeid"
+	"github.com/0xPolygon/typeid"
 )
 
 func ExampleNewInt64() {

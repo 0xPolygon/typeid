@@ -29,12 +29,14 @@ Both are UUIDv7-based and sort by creation time (no UUIDv4 — sortability gives
 | `UUID[P]` | 128 bit | `uuid` | 26 chars | Any throughput. Users, events, logs — use by default. |
 | `Int64[P]` | 63 bit | `BIGINT` | 13 chars | &lt;~100 IDs/sec. Orgs, tenants — compact IDs, 15 random bits; use UNIQUE + retry on conflict. |
 
+Currently, the UUID type is backed by `github.com/google/uuid` but we plan to switch to [Go's `uuid` package.](https://github.com/golang/go/issues/62026) once available. This will likely be a breaking change before we release v1.
+
 ## Usage
 
 ### Define typed IDs
 
 ```go
-import "github.com/go-chi/typeid"
+import "github.com/0xPolygon/typeid"
 
 type userPrefix struct{}
 func (userPrefix) Prefix() string { return "user" }

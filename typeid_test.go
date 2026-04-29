@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-chi/typeid"
+	"github.com/0xPolygon/typeid"
 )
 
 // Prefix definitions — in practice these live next to each domain entity.
