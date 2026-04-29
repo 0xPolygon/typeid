@@ -2,7 +2,9 @@
 
 Prefixed, base32-encoded, k-sortable identifiers for Go. Inspired by [Stripe API IDs](https://stripe.com/docs/api) and the [TypeID spec](https://github.com/jetify-com/typeid).
 
-[![GoDoc Widget]][GoDoc]
+[![GoDoc Widget](https://godoc.org/github.com/go-chi/typeid?status.svg)](https://pkg.go.dev/github.com/go-chi/typeid)
+[![Apache 2.0 License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE-APACHE)
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE-MIT)
 
 ## Identifier format
 
@@ -116,9 +118,19 @@ BenchmarkUUID_Parse           ~33 ns/op     0 B/op    0 allocs/op
 
 Parse is zero-allocation. Encode paths do a single allocation for the output buffer.
 
-# License
+## License
 
-[MIT License](./LICENSE)
+Copyright (c) 2026 PT Services DMCC
 
-[GoDoc]: https://pkg.go.dev/github.com/go-chi/typeid
-[GoDoc Widget]: https://godoc.org/github.com/go-chi/typeid?status.svg
+Licensed under either:
+
+- Apache License, Version 2.0, ([LICENSE-APACHE](./LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>), or
+- MIT license ([LICENSE-MIT](./LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+
+as your option.
+
+The SPDX license identifier for this project is `MIT` OR `Apache-2.0`.
+
+## Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
