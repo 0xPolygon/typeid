@@ -1,6 +1,7 @@
 package typeid
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
@@ -28,7 +29,26 @@ const (
 const (
 	cborByteString16 = 0x50 // major type 2 (byte string), length 16
 	cborUint64       = 0x1b // major type 0 (unsigned int), 8-byte follow
+
+	// Tag headers (major type 6, 1-byte follow = 0xD8).
+	// See https://github.com/lucas-clemente/cbor-specs/blob/master/uuid.md
+	// and https://github.com/lucas-clemente/cbor-specs/blob/master/id.md
+	cborTagUUID = 0x25 // tag 37: value is a UUID (RFC 4122)
+	cborTagID   = 0x27 // tag 39: value has identifier semantics
+	cborTag1B   = 0xd8 // major type 6, additional info 24 (1-byte tag follows)
 )
+
+// decodeCBORTag strips a 2-byte CBOR tag header (0xD8 <tag>) and returns the
+// remaining data. Returns an error if the tag is missing or wrong.
+func decodeCBORTag(data []byte, want byte) ([]byte, error) {
+	if len(data) < 2 {
+		return nil, fmt.Errorf("cbor: input too short for tag")
+	}
+	if data[0] != cborTag1B || data[1] != want {
+		return nil, fmt.Errorf("cbor: expected tag 0x%02x, got 0x%02x 0x%02x", want, data[0], data[1])
+	}
+	return data[2:], nil
+}
 
 // decodeCBORByteString extracts the payload from a CBOR byte string.
 func decodeCBORByteString(data []byte) ([]byte, error) {
@@ -88,8 +108,7 @@ func decodeCBORUint64(data []byte) (uint64, error) {
 		if len(data) < 9 {
 			return 0, fmt.Errorf("cbor: truncated")
 		}
-		return uint64(data[1])<<56 | uint64(data[2])<<48 | uint64(data[3])<<40 | uint64(data[4])<<32 |
-			uint64(data[5])<<24 | uint64(data[6])<<16 | uint64(data[7])<<8 | uint64(data[8]), nil
+		return binary.BigEndian.Uint64(data[1:9]), nil
 	default:
 		return 0, fmt.Errorf("cbor: unsupported uint encoding: %d", info)
 	}

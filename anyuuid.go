@@ -82,26 +82,28 @@ func (id *AnyUUID) UnmarshalText(data []byte) error {
 	return nil
 }
 
-// MarshalCBOR encodes the UUID as a 16-byte CBOR byte string.
+// MarshalCBOR encodes the UUID as CBOR tag 37 wrapping a 16-byte byte string.
 // The prefix is not included in the CBOR encoding.
 func (id AnyUUID) MarshalCBOR() ([]byte, error) {
 	if id.IsZero() {
 		return nil, ErrZeroUUID
 	}
-	b, err := id.val.MarshalBinary()
-	if err != nil {
-		return nil, fmt.Errorf("typeid: marshal uuid binary: %w", err)
-	}
-	out := make([]byte, 17)
-	out[0] = cborByteString16
-	copy(out[1:], b)
+	out := make([]byte, 19) // 2 (tag) + 1 (header) + 16 (uuid)
+	out[0] = cborTag1B
+	out[1] = cborTagUUID
+	out[2] = cborByteString16
+	copy(out[3:], id.val[:])
 	return out, nil
 }
 
-// UnmarshalCBOR decodes a 16-byte CBOR byte string into the UUID.
+// UnmarshalCBOR decodes CBOR tag 37 wrapping a 16-byte byte string into the UUID.
 // The prefix is not restored — call SetPrefix after unmarshaling if needed.
 func (id *AnyUUID) UnmarshalCBOR(data []byte) error {
-	b, err := decodeCBORByteString(data)
+	inner, err := decodeCBORTag(data, cborTagUUID)
+	if err != nil {
+		return fmt.Errorf("typeid: %w", err)
+	}
+	b, err := decodeCBORByteString(inner)
 	if err != nil {
 		return fmt.Errorf("typeid: %w", err)
 	}

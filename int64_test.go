@@ -3,6 +3,7 @@ package typeid_test
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -363,11 +364,11 @@ func TestInt64_CBOR(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(data) != 9 {
-			t.Fatalf("expected 9 bytes, got %d", len(data))
+		if len(data) != 11 {
+			t.Fatalf("expected 11 bytes, got %d", len(data))
 		}
-		if data[0] != 0x1b {
-			t.Fatalf("expected CBOR header 0x1b, got 0x%02x", data[0])
+		if data[0] != 0xd8 || data[1] != 0x27 {
+			t.Fatalf("expected CBOR tag 39 (0xd8 0x27), got 0x%02x 0x%02x", data[0], data[1])
 		}
 		var decoded OrgID
 		if err := decoded.UnmarshalCBOR(data); err != nil {
@@ -385,10 +386,17 @@ func TestInt64_CBOR(t *testing.T) {
 		}
 	})
 
-	t.Run("rejects wrong CBOR type", func(t *testing.T) {
+	t.Run("rejects wrong tag", func(t *testing.T) {
 		var id OrgID
-		if err := id.UnmarshalCBOR([]byte{0x64, 't', 'e', 's', 't'}); err == nil {
-			t.Error("UnmarshalCBOR should reject text string")
+		if err := id.UnmarshalCBOR([]byte{0xd8, 0x25, 0x1b}); err == nil {
+			t.Error("UnmarshalCBOR should reject wrong CBOR tag")
+		}
+	})
+
+	t.Run("rejects missing tag", func(t *testing.T) {
+		var id OrgID
+		if err := id.UnmarshalCBOR([]byte{0x1b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}); err == nil {
+			t.Error("UnmarshalCBOR should reject untagged data")
 		}
 	})
 
@@ -419,8 +427,8 @@ func TestInt64_CBOR(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(data) != 9 {
-			t.Fatalf("expected 9 bytes, got %d", len(data))
+		if len(data) != 11 {
+			t.Fatalf("expected 11 bytes, got %d", len(data))
 		}
 		var decoded OrgID
 		if err := decoded.UnmarshalCBOR(data); err != nil {
@@ -428,6 +436,62 @@ func TestInt64_CBOR(t *testing.T) {
 		}
 		if decoded.Int64() != 42 {
 			t.Errorf("got %d, want 42", decoded.Int64())
+		}
+	})
+
+	t.Run("max int64 roundtrip", func(t *testing.T) {
+		id, err := typeid.Int64From[orgPrefix](math.MaxInt64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := id.MarshalCBOR()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded OrgID
+		if err := decoded.UnmarshalCBOR(data); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.Int64() != math.MaxInt64 {
+			t.Errorf("got %d, want %d", decoded.Int64(), int64(math.MaxInt64))
+		}
+	})
+
+	t.Run("rejects 1<<63", func(t *testing.T) {
+		// Craft tag 39 + uint64 with value 1<<63 (overflows int64).
+		data := []byte{
+			0xd8, 0x27, // tag 39
+			0x1b,                                           // uint64
+			0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 1<<63
+		}
+		var id OrgID
+		if err := id.UnmarshalCBOR(data); err == nil {
+			t.Error("UnmarshalCBOR should reject 1<<63")
+		}
+	})
+
+	t.Run("short-form uint widths", func(t *testing.T) {
+		tests := []struct {
+			name string
+			// tag 39 prefix + encoded uint
+			data []byte
+			want int64
+		}{
+			{"inline (info<=23)", []byte{0xd8, 0x27, 0x05}, 5},
+			{"1-byte (info==24)", []byte{0xd8, 0x27, 0x18, 0x2a}, 42},
+			{"2-byte (info==25)", []byte{0xd8, 0x27, 0x19, 0x01, 0x00}, 256},
+			{"4-byte (info==26)", []byte{0xd8, 0x27, 0x1a, 0x00, 0x01, 0x00, 0x00}, 65536},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				var id OrgID
+				if err := id.UnmarshalCBOR(tt.data); err != nil {
+					t.Fatalf("UnmarshalCBOR: %v", err)
+				}
+				if id.Int64() != tt.want {
+					t.Errorf("got %d, want %d", id.Int64(), tt.want)
+				}
+			})
 		}
 	})
 }
@@ -464,8 +528,23 @@ func BenchmarkInt64_MarshalCBOR(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	b.ResetTimer()
 	for b.Loop() {
 		id.MarshalCBOR() //nolint:errcheck
 	}
+}
+
+func FuzzInt64_UnmarshalCBOR(f *testing.F) {
+	// Seed with valid tagged encoding.
+	id, _ := typeid.NewInt64[orgPrefix]()
+	data, _ := id.MarshalCBOR()
+	f.Add(data)
+	f.Add([]byte{0xd8, 0x27, 0x05})       // tag 39 + inline uint 5
+	f.Add([]byte{0xd8, 0x27, 0x18, 0x2a}) // tag 39 + 1-byte uint 42
+	f.Add([]byte{})                         // empty
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		var id OrgID
+		// Must not panic — errors are fine.
+		id.UnmarshalCBOR(data) //nolint:errcheck
+	})
 }

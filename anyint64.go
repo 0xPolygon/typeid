@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -84,33 +85,38 @@ func (id *AnyInt64) UnmarshalText(data []byte) error {
 	return nil
 }
 
-// MarshalCBOR encodes the value as a CBOR unsigned integer (8-byte).
+// MarshalCBOR encodes the value as CBOR tag 39 wrapping an unsigned integer.
+// Output is always 11 bytes (2-byte tag + 9-byte uint64) — fixed-width by
+// design, not RFC 8949 §4.2.1 deterministic encoding. The decoder accepts all
+// CBOR unsigned integer widths for interop.
 func (id AnyInt64) MarshalCBOR() ([]byte, error) {
 	if id.val <= 0 {
 		return nil, ErrNonPositiveInt
 	}
-	out := make([]byte, 9)
-	out[0] = cborUint64
-	out[1] = byte(id.val >> 56)
-	out[2] = byte(id.val >> 48)
-	out[3] = byte(id.val >> 40)
-	out[4] = byte(id.val >> 32)
-	out[5] = byte(id.val >> 24)
-	out[6] = byte(id.val >> 16)
-	out[7] = byte(id.val >> 8)
-	out[8] = byte(id.val)
+	out := make([]byte, 11) // 2 (tag) + 1 (header) + 8 (uint64)
+	out[0] = cborTag1B
+	out[1] = cborTagID
+	out[2] = cborUint64
+	binary.BigEndian.PutUint64(out[3:], uint64(id.val))
 	return out, nil
 }
 
-// UnmarshalCBOR decodes a CBOR unsigned integer into the AnyInt64.
+// UnmarshalCBOR decodes CBOR tag 39 wrapping an unsigned integer into the AnyInt64.
 // The prefix is not restored — call SetPrefix after unmarshaling if needed.
 func (id *AnyInt64) UnmarshalCBOR(data []byte) error {
-	v, err := decodeCBORUint64(data)
+	inner, err := decodeCBORTag(data, cborTagID)
 	if err != nil {
 		return fmt.Errorf("typeid: %w", err)
 	}
-	if v == 0 || v > 1<<63-1 {
+	v, err := decodeCBORUint64(inner)
+	if err != nil {
+		return fmt.Errorf("typeid: %w", err)
+	}
+	if v == 0 {
 		return ErrNonPositiveInt
+	}
+	if v > math.MaxInt64 {
+		return ErrOverflowInt64
 	}
 	id.val = int64(v)
 	return nil
