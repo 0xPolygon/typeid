@@ -24,6 +24,77 @@ const (
 	int64SuffixLen = 13 // 65-bit capacity, 63 used
 )
 
+// CBOR constants for hand-encoded marshal/unmarshal.
+const (
+	cborByteString16 = 0x50 // major type 2 (byte string), length 16
+	cborUint64       = 0x1b // major type 0 (unsigned int), 8-byte follow
+)
+
+// decodeCBORByteString extracts the payload from a CBOR byte string.
+func decodeCBORByteString(data []byte) ([]byte, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("cbor: empty input")
+	}
+	if data[0]&0xe0 != 0x40 {
+		return nil, fmt.Errorf("cbor: expected byte string, got 0x%02x", data[0])
+	}
+	info := data[0] & 0x1f
+	var offset, length int
+	switch {
+	case info <= 23:
+		length, offset = int(info), 1
+	case info == 24:
+		if len(data) < 2 {
+			return nil, fmt.Errorf("cbor: truncated length")
+		}
+		length, offset = int(data[1]), 2
+	default:
+		return nil, fmt.Errorf("cbor: unsupported length encoding: %d", info)
+	}
+	if len(data) < offset+length {
+		return nil, fmt.Errorf("cbor: truncated byte string")
+	}
+	return data[offset : offset+length], nil
+}
+
+// decodeCBORUint64 decodes a CBOR unsigned integer (major type 0).
+func decodeCBORUint64(data []byte) (uint64, error) {
+	if len(data) == 0 {
+		return 0, fmt.Errorf("cbor: empty input")
+	}
+	if data[0]&0xe0 != 0x00 {
+		return 0, fmt.Errorf("cbor: expected unsigned integer, got 0x%02x", data[0])
+	}
+	info := data[0] & 0x1f
+	switch {
+	case info <= 23:
+		return uint64(info), nil
+	case info == 24:
+		if len(data) < 2 {
+			return 0, fmt.Errorf("cbor: truncated")
+		}
+		return uint64(data[1]), nil
+	case info == 25:
+		if len(data) < 3 {
+			return 0, fmt.Errorf("cbor: truncated")
+		}
+		return uint64(data[1])<<8 | uint64(data[2]), nil
+	case info == 26:
+		if len(data) < 5 {
+			return 0, fmt.Errorf("cbor: truncated")
+		}
+		return uint64(data[1])<<24 | uint64(data[2])<<16 | uint64(data[3])<<8 | uint64(data[4]), nil
+	case info == 27:
+		if len(data) < 9 {
+			return 0, fmt.Errorf("cbor: truncated")
+		}
+		return uint64(data[1])<<56 | uint64(data[2])<<48 | uint64(data[3])<<40 | uint64(data[4])<<32 |
+			uint64(data[5])<<24 | uint64(data[6])<<16 | uint64(data[7])<<8 | uint64(data[8]), nil
+	default:
+		return 0, fmt.Errorf("cbor: unsupported uint encoding: %d", info)
+	}
+}
+
 // splitTypeid splits "prefix_<suffix>" from the right using known suffix length.
 // Supports underscores in the prefix (e.g. "project_env_<suffix>").
 func splitTypeid[P Prefixer](s string, suffixLen int) (string, error) {

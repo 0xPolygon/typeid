@@ -70,6 +70,39 @@ func (id *UUID[P]) UnmarshalText(data []byte) error {
 	return nil
 }
 
+// MarshalCBOR encodes the UUID as a 16-byte CBOR byte string.
+// The type prefix is not included — it is determined by the type parameter.
+func (id UUID[P]) MarshalCBOR() ([]byte, error) {
+	if id.IsZero() {
+		return nil, ErrZeroUUID
+	}
+	b, err := id.val.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("typeid: marshal uuid binary: %w", err)
+	}
+	out := make([]byte, 17)
+	out[0] = cborByteString16
+	copy(out[1:], b)
+	return out, nil
+}
+
+// UnmarshalCBOR decodes a 16-byte CBOR byte string into the UUID.
+func (id *UUID[P]) UnmarshalCBOR(data []byte) error {
+	b, err := decodeCBORByteString(data)
+	if err != nil {
+		return fmt.Errorf("typeid: %w", err)
+	}
+	u, err := uuid.FromBytes(b)
+	if err != nil {
+		return fmt.Errorf("typeid: %w", err)
+	}
+	if u.Version() != 7 {
+		return ErrOnlyV7
+	}
+	id.val = u
+	return nil
+}
+
 func (id UUID[P]) Value() (driver.Value, error) {
 	if id.IsZero() {
 		return nil, ErrZeroUUID

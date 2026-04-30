@@ -352,3 +352,120 @@ func TestInt64_Sortable(t *testing.T) {
 		t.Errorf("expected a < b lexicographically\n  a = %s\n  b = %s", a, b)
 	}
 }
+
+func TestInt64_CBOR(t *testing.T) {
+	t.Run("roundtrip", func(t *testing.T) {
+		id, err := typeid.NewInt64[orgPrefix]()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := id.MarshalCBOR()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) != 9 {
+			t.Fatalf("expected 9 bytes, got %d", len(data))
+		}
+		if data[0] != 0x1b {
+			t.Fatalf("expected CBOR header 0x1b, got 0x%02x", data[0])
+		}
+		var decoded OrgID
+		if err := decoded.UnmarshalCBOR(data); err != nil {
+			t.Fatal(err)
+		}
+		if decoded != id {
+			t.Errorf("got %s, want %s", decoded, id)
+		}
+	})
+
+	t.Run("rejects zero", func(t *testing.T) {
+		var zero OrgID
+		if _, err := zero.MarshalCBOR(); err == nil {
+			t.Error("MarshalCBOR should reject zero")
+		}
+	})
+
+	t.Run("rejects wrong CBOR type", func(t *testing.T) {
+		var id OrgID
+		if err := id.UnmarshalCBOR([]byte{0x64, 't', 'e', 's', 't'}); err == nil {
+			t.Error("UnmarshalCBOR should reject text string")
+		}
+	})
+
+	t.Run("known value", func(t *testing.T) {
+		id, err := typeid.Int64From[orgPrefix](1234567890)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := id.MarshalCBOR()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded OrgID
+		if err := decoded.UnmarshalCBOR(data); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.Int64() != 1234567890 {
+			t.Errorf("got %d, want 1234567890", decoded.Int64())
+		}
+	})
+
+	t.Run("small value", func(t *testing.T) {
+		id, err := typeid.Int64From[orgPrefix](42)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := id.MarshalCBOR()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) != 9 {
+			t.Fatalf("expected 9 bytes, got %d", len(data))
+		}
+		var decoded OrgID
+		if err := decoded.UnmarshalCBOR(data); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.Int64() != 42 {
+			t.Errorf("got %d, want 42", decoded.Int64())
+		}
+	})
+}
+
+func TestAnyInt64_CBOR(t *testing.T) {
+	t.Run("roundtrip", func(t *testing.T) {
+		id, err := typeid.NewAnyInt64("counter")
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := id.MarshalCBOR()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded typeid.AnyInt64
+		if err := decoded.UnmarshalCBOR(data); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.Int64() != id.Int64() {
+			t.Errorf("value mismatch: got %d, want %d", decoded.Int64(), id.Int64())
+		}
+	})
+
+	t.Run("rejects zero", func(t *testing.T) {
+		var zero typeid.AnyInt64
+		if _, err := zero.MarshalCBOR(); err == nil {
+			t.Error("MarshalCBOR should reject zero")
+		}
+	})
+}
+
+func BenchmarkInt64_MarshalCBOR(b *testing.B) {
+	id, err := typeid.NewInt64[orgPrefix]()
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		id.MarshalCBOR() //nolint:errcheck
+	}
+}

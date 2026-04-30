@@ -104,6 +104,37 @@ func (id *Int64[P]) UnmarshalText(data []byte) error {
 	return nil
 }
 
+// MarshalCBOR encodes the value as a CBOR unsigned integer (8-byte).
+func (id Int64[P]) MarshalCBOR() ([]byte, error) {
+	if id.val <= 0 {
+		return nil, ErrNonPositiveInt
+	}
+	out := make([]byte, 9)
+	out[0] = cborUint64
+	out[1] = byte(id.val >> 56)
+	out[2] = byte(id.val >> 48)
+	out[3] = byte(id.val >> 40)
+	out[4] = byte(id.val >> 32)
+	out[5] = byte(id.val >> 24)
+	out[6] = byte(id.val >> 16)
+	out[7] = byte(id.val >> 8)
+	out[8] = byte(id.val)
+	return out, nil
+}
+
+// UnmarshalCBOR decodes a CBOR unsigned integer into the Int64.
+func (id *Int64[P]) UnmarshalCBOR(data []byte) error {
+	v, err := decodeCBORUint64(data)
+	if err != nil {
+		return fmt.Errorf("typeid: %w", err)
+	}
+	if v == 0 || v > 1<<63-1 {
+		return ErrNonPositiveInt
+	}
+	id.val = int64(v)
+	return nil
+}
+
 func (id Int64[P]) Value() (driver.Value, error) {
 	if id.val <= 0 {
 		return nil, ErrNonPositiveInt
