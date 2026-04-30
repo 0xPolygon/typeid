@@ -703,6 +703,25 @@ func TestUUID_CBOR(t *testing.T) {
 		}
 	})
 
+	t.Run("rejects truncated payload", func(t *testing.T) {
+		// Valid tag 37, valid byte-string header (length 16), but only 4 payload bytes.
+		data := []byte{0xd8, 0x25, 0x50, 0x01, 0x02, 0x03, 0x04}
+		var id UserID
+		if err := id.UnmarshalCBOR(data); err == nil {
+			t.Error("UnmarshalCBOR should reject truncated payload")
+		}
+	})
+
+	t.Run("rejects trailing garbage", func(t *testing.T) {
+		id, _ := typeid.NewUUID[userPrefix]()
+		data, _ := id.MarshalCBOR()
+		data = append(data, 0xff) // append garbage byte
+		var decoded UserID
+		if err := decoded.UnmarshalCBOR(data); err == nil {
+			t.Error("UnmarshalCBOR should reject trailing bytes")
+		}
+	})
+
 	t.Run("rejects empty", func(t *testing.T) {
 		var id UserID
 		if err := id.UnmarshalCBOR(nil); err == nil {
@@ -800,7 +819,7 @@ func FuzzUUID_UnmarshalCBOR(f *testing.F) {
 	data, _ := id.MarshalCBOR()
 	f.Add(data)
 	f.Add([]byte{0xd8, 0x25, 0x50}) // tag 37 + truncated byte string
-	f.Add([]byte{})                   // empty
+	f.Add([]byte{})                  // empty
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		var id UserID

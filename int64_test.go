@@ -400,6 +400,25 @@ func TestInt64_CBOR(t *testing.T) {
 		}
 	})
 
+	t.Run("rejects truncated payload", func(t *testing.T) {
+		// Valid tag 39, valid uint64 header, but only 4 of 8 payload bytes.
+		data := []byte{0xd8, 0x27, 0x1b, 0x00, 0x00, 0x00, 0x01}
+		var id OrgID
+		if err := id.UnmarshalCBOR(data); err == nil {
+			t.Error("UnmarshalCBOR should reject truncated payload")
+		}
+	})
+
+	t.Run("rejects trailing garbage", func(t *testing.T) {
+		id, _ := typeid.NewInt64[orgPrefix]()
+		data, _ := id.MarshalCBOR()
+		data = append(data, 0xff) // append garbage byte
+		var decoded OrgID
+		if err := decoded.UnmarshalCBOR(data); err == nil {
+			t.Error("UnmarshalCBOR should reject trailing bytes")
+		}
+	})
+
 	t.Run("known value", func(t *testing.T) {
 		id, err := typeid.Int64From[orgPrefix](1234567890)
 		if err != nil {
@@ -538,9 +557,9 @@ func FuzzInt64_UnmarshalCBOR(f *testing.F) {
 	id, _ := typeid.NewInt64[orgPrefix]()
 	data, _ := id.MarshalCBOR()
 	f.Add(data)
-	f.Add([]byte{0xd8, 0x27, 0x05})       // tag 39 + inline uint 5
+	f.Add([]byte{0xd8, 0x27, 0x05})        // tag 39 + inline uint 5
 	f.Add([]byte{0xd8, 0x27, 0x18, 0x2a}) // tag 39 + 1-byte uint 42
-	f.Add([]byte{})                         // empty
+	f.Add([]byte{})                        // empty
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		var id OrgID
