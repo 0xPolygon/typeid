@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -101,6 +102,42 @@ func (id *Int64[P]) UnmarshalText(data []byte) error {
 		return err
 	}
 	*id = parsed
+	return nil
+}
+
+// MarshalCBOR encodes the value as CBOR tag 39 wrapping an unsigned integer.
+// Output is always 11 bytes (2-byte tag + 9-byte uint64) — fixed-width by
+// design, not RFC 8949 §4.2.1 deterministic encoding. The decoder accepts all
+// CBOR unsigned integer widths for interop.
+func (id Int64[P]) MarshalCBOR() ([]byte, error) {
+	if id.val <= 0 {
+		return nil, ErrNonPositiveInt
+	}
+	out := make([]byte, 11) // 2 (tag) + 1 (header) + 8 (uint64)
+	out[0] = cborTag1B
+	out[1] = cborTagID
+	out[2] = cborUint64
+	binary.BigEndian.PutUint64(out[3:], uint64(id.val))
+	return out, nil
+}
+
+// UnmarshalCBOR decodes CBOR tag 39 wrapping an unsigned integer into the Int64.
+func (id *Int64[P]) UnmarshalCBOR(data []byte) error {
+	inner, err := decodeCBORTag(data, cborTagID)
+	if err != nil {
+		return fmt.Errorf("typeid: %w", err)
+	}
+	v, err := decodeCBORUint64(inner)
+	if err != nil {
+		return fmt.Errorf("typeid: %w", err)
+	}
+	if v == 0 {
+		return ErrNonPositiveInt
+	}
+	if v > math.MaxInt64 {
+		return ErrOverflowInt64
+	}
+	id.val = int64(v)
 	return nil
 }
 

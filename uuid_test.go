@@ -643,3 +643,187 @@ func TestUUID_Sortable(t *testing.T) {
 		t.Errorf("expected a < b (IDs must sort by time)\n  a = %s\n  b = %s", a, b)
 	}
 }
+
+func TestUUID_CBOR(t *testing.T) {
+	t.Run("roundtrip", func(t *testing.T) {
+		id, err := typeid.NewUUID[userPrefix]()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := id.MarshalCBOR()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) != 19 {
+			t.Fatalf("expected 19 bytes, got %d", len(data))
+		}
+		if data[0] != 0xd8 || data[1] != 0x25 {
+			t.Fatalf("expected CBOR tag 37 (0xd8 0x25), got 0x%02x 0x%02x", data[0], data[1])
+		}
+		var decoded UserID
+		if err := decoded.UnmarshalCBOR(data); err != nil {
+			t.Fatal(err)
+		}
+		if decoded != id {
+			t.Errorf("got %s, want %s", decoded, id)
+		}
+	})
+
+	t.Run("rejects zero", func(t *testing.T) {
+		var zero UserID
+		if _, err := zero.MarshalCBOR(); err == nil {
+			t.Error("MarshalCBOR should reject zero UUID")
+		}
+	})
+
+	t.Run("rejects non-v7", func(t *testing.T) {
+		v4 := uuid.New()
+		data := make([]byte, 19)
+		data[0] = 0xd8
+		data[1] = 0x25
+		data[2] = 0x50
+		copy(data[3:], v4[:])
+		var id UserID
+		if err := id.UnmarshalCBOR(data); err == nil {
+			t.Error("UnmarshalCBOR should reject non-v7 UUID")
+		}
+	})
+
+	t.Run("rejects wrong tag", func(t *testing.T) {
+		var id UserID
+		if err := id.UnmarshalCBOR([]byte{0xd8, 0x27, 0x50}); err == nil {
+			t.Error("UnmarshalCBOR should reject wrong CBOR tag")
+		}
+	})
+
+	t.Run("rejects missing tag", func(t *testing.T) {
+		var id UserID
+		if err := id.UnmarshalCBOR([]byte{0x50, 0x01, 0x02}); err == nil {
+			t.Error("UnmarshalCBOR should reject untagged data")
+		}
+	})
+
+	t.Run("rejects truncated payload", func(t *testing.T) {
+		// Valid tag 37, valid byte-string header (length 16), but only 4 payload bytes.
+		data := []byte{0xd8, 0x25, 0x50, 0x01, 0x02, 0x03, 0x04}
+		var id UserID
+		if err := id.UnmarshalCBOR(data); err == nil {
+			t.Error("UnmarshalCBOR should reject truncated payload")
+		}
+	})
+
+	t.Run("rejects trailing garbage", func(t *testing.T) {
+		id, _ := typeid.NewUUID[userPrefix]()
+		data, _ := id.MarshalCBOR()
+		data = append(data, 0xff) // append garbage byte
+		var decoded UserID
+		if err := decoded.UnmarshalCBOR(data); err == nil {
+			t.Error("UnmarshalCBOR should reject trailing bytes")
+		}
+	})
+
+	t.Run("rejects empty", func(t *testing.T) {
+		var id UserID
+		if err := id.UnmarshalCBOR(nil); err == nil {
+			t.Error("UnmarshalCBOR should reject empty input")
+		}
+	})
+
+	t.Run("known vector", func(t *testing.T) {
+		raw := uuid.Must(uuid.FromBytes([]byte{
+			0x01, 0x93, 0x2c, 0x1c, 0xe4, 0x00,
+			0x73, 0x60,
+			0x81, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
+		}))
+		id, err := typeid.UUIDFrom[userPrefix](raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := id.MarshalCBOR()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, b := range raw {
+			if data[3+i] != b {
+				t.Fatalf("byte %d: got 0x%02x, want 0x%02x", i, data[3+i], b)
+			}
+		}
+		var decoded UserID
+		if err := decoded.UnmarshalCBOR(data); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.UUID() != raw {
+			t.Errorf("UUID mismatch: got %s, want %s", decoded.UUID(), raw)
+		}
+	})
+}
+
+func TestAnyUUID_CBOR(t *testing.T) {
+	t.Run("roundtrip", func(t *testing.T) {
+		id, err := typeid.NewAnyUUID("team")
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := id.MarshalCBOR()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) != 19 {
+			t.Fatalf("expected 19 bytes, got %d", len(data))
+		}
+		var decoded typeid.AnyUUID
+		if err := decoded.UnmarshalCBOR(data); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.UUID() != id.UUID() {
+			t.Errorf("UUID mismatch: got %s, want %s", decoded.UUID(), id.UUID())
+		}
+	})
+
+	t.Run("rejects zero", func(t *testing.T) {
+		var zero typeid.AnyUUID
+		if _, err := zero.MarshalCBOR(); err == nil {
+			t.Error("MarshalCBOR should reject zero UUID")
+		}
+	})
+}
+
+func BenchmarkUUID_MarshalCBOR(b *testing.B) {
+	id, err := typeid.NewUUID[userPrefix]()
+	if err != nil {
+		b.Fatal(err)
+	}
+	for b.Loop() {
+		id.MarshalCBOR() //nolint:errcheck
+	}
+}
+
+func BenchmarkUUID_UnmarshalCBOR(b *testing.B) {
+	id, err := typeid.NewUUID[userPrefix]()
+	if err != nil {
+		b.Fatal(err)
+	}
+	data, err := id.MarshalCBOR()
+	if err != nil {
+		b.Fatal(err)
+	}
+	for b.Loop() {
+		var decoded UserID
+		decoded.UnmarshalCBOR(data) //nolint:errcheck
+	}
+}
+
+func FuzzUUID_UnmarshalCBOR(f *testing.F) {
+	// Seed with valid tagged encoding.
+	id, _ := typeid.NewUUID[userPrefix]()
+	data, _ := id.MarshalCBOR()
+	f.Add(data)
+	f.Add([]byte{0xd8, 0x25, 0x50}) // tag 37 + truncated byte string
+	f.Add([]byte{})                  // empty
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		var id UserID
+		// Must not panic — errors are fine.
+		id.UnmarshalCBOR(data) //nolint:errcheck
+	})
+}
