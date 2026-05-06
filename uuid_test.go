@@ -584,6 +584,23 @@ func TestAnyUUID_GetTime(t *testing.T) {
 	}
 }
 
+func TestUUID_GetTime(t *testing.T) {
+	before := time.Now()
+	id, _ := typeid.NewUUID[userPrefix]()
+	after := time.Now()
+
+	got := id.GetTime()
+	if got.Before(before.Truncate(time.Millisecond)) {
+		t.Errorf("GetTime %v before creation time %v", got, before)
+	}
+	if got.After(after.Add(time.Millisecond)) {
+		t.Errorf("GetTime %v after creation time %v", got, after)
+	}
+	if got != id.Any().GetTime() {
+		t.Errorf("GetTime mismatch with Any().GetTime(): %v vs %v", got, id.Any().GetTime())
+	}
+}
+
 func TestAnyUUID_JSON(t *testing.T) {
 	type Record struct {
 		ID   typeid.AnyUUID `json:"id"`

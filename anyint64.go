@@ -58,6 +58,10 @@ func (id *AnyInt64) SetPrefix(s string) {
 	id.prefix = s
 }
 
+// GetTime extracts the millisecond-precision creation timestamp from the
+// upper 48 bits of the value.
+func (id AnyInt64) GetTime() time.Time { return time.UnixMilli(id.val >> randomBits) }
+
 func (id AnyInt64) appendText(dst []byte) []byte {
 	return appendBase32Int64(dst, id.prefix, id.val)
 }

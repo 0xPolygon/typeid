@@ -89,6 +89,10 @@ func (id Int64[P]) String() string {
 }
 func (id Int64[P]) Int64() int64 { return id.val }
 func (id Int64[P]) IsZero() bool { return id.val == 0 }
+
+// GetTime extracts the millisecond-precision creation timestamp from the
+// upper 48 bits of the value.
+func (id Int64[P]) GetTime() time.Time { return time.UnixMilli(id.val >> randomBits) }
 func (id Int64[P]) MarshalText() ([]byte, error) {
 	if id.val <= 0 {
 		return nil, ErrNonPositiveInt
