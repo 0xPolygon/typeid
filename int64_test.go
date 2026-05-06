@@ -183,6 +183,46 @@ func TestInt64_ScanInvalid(t *testing.T) {
 	}
 }
 
+func TestInt64_GetTime(t *testing.T) {
+	before := time.Now()
+	id, _ := typeid.NewInt64[orgPrefix]()
+	after := time.Now()
+
+	got := id.GetTime()
+	if got.Before(before.Truncate(time.Millisecond)) {
+		t.Errorf("GetTime %v before creation time %v", got, before)
+	}
+	if got.After(after.Add(time.Millisecond)) {
+		t.Errorf("GetTime %v after creation time %v", got, after)
+	}
+}
+
+func TestAnyInt64_GetTime(t *testing.T) {
+	before := time.Now()
+	id, _ := typeid.NewAnyInt64("org")
+	after := time.Now()
+
+	got := id.GetTime()
+	if got.Before(before.Truncate(time.Millisecond)) {
+		t.Errorf("GetTime %v before creation time %v", got, before)
+	}
+	if got.After(after.Add(time.Millisecond)) {
+		t.Errorf("GetTime %v after creation time %v", got, after)
+	}
+}
+
+func TestInt64_GetTime_KnownVector(t *testing.T) {
+	const ms = int64(1700000000000)
+	raw := (ms << 15) | 12345
+	id, err := typeid.Int64From[orgPrefix](raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := id.GetTime(); !got.Equal(time.UnixMilli(ms)) {
+		t.Errorf("GetTime() = %v, want %v", got, time.UnixMilli(ms))
+	}
+}
+
 func TestInt64_KnownVector(t *testing.T) {
 	// timestamp=1700000000000ms, random=12345
 	raw := int64(1700000000000<<15) | 12345

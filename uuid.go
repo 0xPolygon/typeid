@@ -3,6 +3,7 @@ package typeid
 import (
 	"database/sql/driver"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -117,6 +118,9 @@ func (id UUID[P]) Any() AnyUUID {
 	var p P
 	return AnyUUID{val: id.val, prefix: p.Prefix()}
 }
+
+// GetTime extracts the millisecond-precision creation timestamp from the UUIDv7.
+func (id UUID[P]) GetTime() time.Time { return id.Any().GetTime() }
 
 func (id *UUID[P]) Scan(src any) (err error) {
 	var u uuid.UUID
