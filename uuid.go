@@ -30,7 +30,7 @@ func UUIDFrom[P Prefixer](u uuid.UUID) (UUID[P], error) {
 }
 
 func ParseUUID[P Prefixer](s string) (UUID[P], error) {
-	suffix, err := splitTypeid[P](s, uuidSuffixLen)
+	suffix, err := splitTypeid[P](s, UUIDSuffixLen)
 	if err != nil {
 		return UUID[P]{}, err
 	}

@@ -67,7 +67,7 @@ func Int64From[P Prefixer](v int64) (Int64[P], error) {
 }
 
 func ParseInt64[P Prefixer](s string) (Int64[P], error) {
-	suffix, err := splitTypeid[P](s, int64SuffixLen)
+	suffix, err := splitTypeid[P](s, Int64SuffixLen)
 	if err != nil {
 		return Int64[P]{}, err
 	}
