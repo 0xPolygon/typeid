@@ -35,7 +35,7 @@ func AnyUUIDFrom(prefix string, u uuid.UUID) (AnyUUID, error) {
 func ParseAnyUUID(s string) (AnyUUID, error) {
 	j := strings.LastIndex(s, "_") + 1
 	pref, suffix := s[:max(0, j-1)], s[j:]
-	if len(suffix) != uuidSuffixLen {
+	if len(suffix) != UUIDSuffixLen {
 		return AnyUUID{}, fmt.Errorf("typeid: invalid format: %q", s)
 	}
 	b, err := decodeBase32UUID(suffix)

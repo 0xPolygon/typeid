@@ -39,7 +39,7 @@ func AnyInt64From(prefix string, v int64) (AnyInt64, error) {
 func ParseAnyInt64(s string) (AnyInt64, error) {
 	j := strings.LastIndex(s, "_") + 1
 	pref, suffix := s[:max(0, j-1)], s[j:]
-	if len(suffix) != int64SuffixLen {
+	if len(suffix) != Int64SuffixLen {
 		return AnyInt64{}, fmt.Errorf("typeid: invalid format: %q", s)
 	}
 	v, err := decodeBase32Int64(suffix)

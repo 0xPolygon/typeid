@@ -20,9 +20,13 @@ var (
 	ErrOverflowInt64  = errors.New("typeid: value overflows int64")
 )
 
+// Suffix lengths of the two id encodings, in Crockford base32 characters —
+// stable wire-format invariants (a UUID is 128 bits, an Int64 is 63 bits).
+// Exposed so callers that length-classify a typeid string need not hardcode the
+// widths.
 const (
-	uuidSuffixLen  = 26 // 130-bit capacity, 128 used
-	int64SuffixLen = 13 // 65-bit capacity, 63 used
+	UUIDSuffixLen  = 26 // 130-bit capacity, 128 used
+	Int64SuffixLen = 13 // 65-bit capacity, 63 used
 )
 
 // CBOR constants for hand-encoded marshal/unmarshal.

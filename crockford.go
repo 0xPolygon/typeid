@@ -35,14 +35,14 @@ func decodeChar(c byte) (byte, error) {
 
 // appendBase32UUID appends an optional prefix and underscore, then the 26-char typeid suffix for u.
 func appendBase32UUID(dst []byte, prefix string, u uuid.UUID) []byte {
-	dst = slices.Grow(dst, uuidSuffixLen+len(prefix)+min(1, len(prefix)))
+	dst = slices.Grow(dst, UUIDSuffixLen+len(prefix)+min(1, len(prefix)))
 	if len(prefix) > 0 {
 		dst = append(append(dst, prefix...), '_')
 	}
 	hi := binary.BigEndian.Uint64(u[:8])
 	lo := binary.BigEndian.Uint64(u[8:])
 
-	var buf [uuidSuffixLen]byte
+	var buf [UUIDSuffixLen]byte
 
 	for i := 25; i >= 14; i-- {
 		buf[i] = alphabet[lo&0x1F]
@@ -63,7 +63,7 @@ func appendBase32UUID(dst []byte, prefix string, u uuid.UUID) []byte {
 
 // UUID decoding (26 chars -> 128 bits)
 func decodeBase32UUID(s string) ([16]byte, error) {
-	if len(s) != uuidSuffixLen {
+	if len(s) != UUIDSuffixLen {
 		return [16]byte{}, fmt.Errorf("typeid: invalid suffix length %d", len(s))
 	}
 
@@ -108,12 +108,12 @@ func decodeBase32UUID(s string) ([16]byte, error) {
 
 // appendBase32Int64 appends an optional prefix and underscore, then the 13-char typeid suffix for n.
 func appendBase32Int64(dst []byte, prefix string, n int64) []byte {
-	dst = slices.Grow(dst, int64SuffixLen+len(prefix)+min(1, len(prefix)))
+	dst = slices.Grow(dst, Int64SuffixLen+len(prefix)+min(1, len(prefix)))
 	if len(prefix) > 0 {
 		dst = append(append(dst, prefix...), '_')
 	}
 	u := uint64(n)
-	var buf [int64SuffixLen]byte
+	var buf [Int64SuffixLen]byte
 
 	for i := 12; i >= 1; i-- {
 		buf[i] = alphabet[u&0x1F]
@@ -126,7 +126,7 @@ func appendBase32Int64(dst []byte, prefix string, n int64) []byte {
 
 // Int64 decoding (13 chars -> 63 bits)
 func decodeBase32Int64(s string) (int64, error) {
-	if len(s) != int64SuffixLen {
+	if len(s) != Int64SuffixLen {
 		return 0, fmt.Errorf("typeid: invalid suffix length %d", len(s))
 	}
 
@@ -139,7 +139,7 @@ func decodeBase32Int64(s string) (int64, error) {
 	}
 	val := uint64(v)
 
-	for i := 1; i < int64SuffixLen; i++ {
+	for i := 1; i < Int64SuffixLen; i++ {
 		v, err = decodeChar(s[i])
 		if err != nil {
 			return 0, err
