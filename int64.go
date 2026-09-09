@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"sync/atomic"
 	"time"
 )
 
@@ -24,39 +25,68 @@ const randomBits = 15
 //
 // # Collision resistance
 //
-// 15 random bits = 32,768 values per millisecond. Collision probability follows
-// the birthday problem: ~R²/65,536,000 expected collisions per second for R
-// total IDs/sec across all servers.
+// 15 random bits leave only 32,768 values per millisecond, so two IDs drawn in
+// the same millisecond collide about once per 32k pairs. [NewInt64] closes that
+// gap inside a process: it remembers the highest value it has issued and never
+// returns that value or a lower one, so a single process cannot produce a
+// duplicate no matter how fast it mints.
 //
-//	   10 IDs/sec → ~1 collision per 7,500 days
-//	  100 IDs/sec → ~1 collision per 1.8 hours
-//	1,000 IDs/sec → ~1 collision per 65 seconds
+// Across processes the random bits are all that separate two IDs drawn in the
+// same millisecond, and the birthday bound still applies: ~R²/65,536,000
+// expected collisions per second for R IDs/sec spread over N servers, falling
+// as 1/N compared to the same rate on one server. Protect with a UNIQUE
+// constraint. For high-throughput resources use [UUID] instead.
 //
-// Protect with a UNIQUE constraint and retry on conflict. For high-throughput
-// resources use [UUID] instead.
+// # Ordering (sortable)
 //
-// # Ordering (k-sortable)
+// IDs from one process are strictly increasing, because each value is either a
+// fresh timestamp-plus-random draw above the last one or the last one plus one.
+// Across processes they are k-sortable: the 48-bit timestamp dominates, so IDs
+// sort by creation time at millisecond granularity, and clock skew between
+// servers may reorder IDs within the skew window.
 //
-// IDs are k-sortable: the 48-bit timestamp in the high bits dominates sort
-// order, so IDs sort by creation time at millisecond granularity. Two IDs
-// generated in the exact same millisecond are not ordered relative to each
-// other, but they cluster on the same B-tree leaf pages — no impact on
-// Postgres insert locality. Clock skew between servers may produce
-// out-of-order IDs within that skew window.
+// Two cases push a value past its own millisecond. A process that mints more
+// than 32,768 IDs in one millisecond borrows from the next, and a process whose
+// clock steps backwards keeps counting up from where it was. [Int64.GetTime]
+// then reports a time slightly ahead of the draw. Both are bounded by how far
+// the sequence ran ahead, and both are preferable to handing out a duplicate.
 type Int64[P Prefixer] struct {
 	val int64
 }
 
-func NewInt64[P Prefixer]() (Int64[P], error) {
+// lastInt64 is the highest value this process has issued, shared by [Int64] and
+// [AnyInt64] and by every prefix, so that no two of them are ever equal.
+var lastInt64 atomic.Int64
+
+// nextInt64 draws a timestamp-plus-random value and lifts it above every value
+// this process has already handed out.
+func nextInt64() (int64, error) {
 	ms := time.Now().UnixMilli()
 
 	var rb [2]byte
 	if _, err := rand.Read(rb[:]); err != nil {
-		return Int64[P]{}, fmt.Errorf("typeid: crypto/rand: %w", err)
+		return 0, fmt.Errorf("typeid: crypto/rand: %w", err)
 	}
-	r := int64(binary.BigEndian.Uint16(rb[:]) & 0x7FFF)
+	drawn := (ms << randomBits) | int64(binary.BigEndian.Uint16(rb[:])&0x7FFF)
 
-	return Int64[P]{val: (ms << randomBits) | r}, nil
+	for {
+		last := lastInt64.Load()
+		v := drawn
+		if v <= last {
+			v = last + 1
+		}
+		if lastInt64.CompareAndSwap(last, v) {
+			return v, nil
+		}
+	}
+}
+
+func NewInt64[P Prefixer]() (Int64[P], error) {
+	v, err := nextInt64()
+	if err != nil {
+		return Int64[P]{}, err
+	}
+	return Int64[P]{val: v}, nil
 }
 
 func Int64From[P Prefixer](v int64) (Int64[P], error) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -605,5 +606,130 @@ func FuzzInt64_UnmarshalCBOR(f *testing.F) {
 		var id OrgID
 		// Must not panic — errors are fine.
 		id.UnmarshalCBOR(data) //nolint:errcheck
+	})
+}
+
+// TestInt64_UniqueUnderBurst is the regression test for the collision this
+// generator used to allow. Before the high-water mark existed, minting this
+// many IDs in one process produced thousands of duplicates, because 15 random
+// bits give only 32,768 distinct values per millisecond.
+func TestInt64_UniqueUnderBurst(t *testing.T) {
+	const n = 200_000
+	seen := make(map[int64]int, n)
+	for i := range n {
+		id, err := typeid.NewInt64[orgPrefix]()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first, dup := seen[id.Int64()]; dup {
+			t.Fatalf("mint %d repeated the value from mint %d: %d", i, first, id.Int64())
+		}
+		seen[id.Int64()] = i
+	}
+}
+
+func TestInt64_StrictlyIncreasing(t *testing.T) {
+	prev, err := typeid.NewInt64[orgPrefix]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 100_000 {
+		id, err := typeid.NewInt64[orgPrefix]()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if id.Int64() <= prev.Int64() {
+			t.Fatalf("mint %d did not advance: %d after %d", i, id.Int64(), prev.Int64())
+		}
+		prev = id
+	}
+}
+
+// TestInt64_UniqueUnderConcurrency exercises the compare-and-swap. Run it with
+// -race: a lost update would let two goroutines settle on the same value.
+func TestInt64_UniqueUnderConcurrency(t *testing.T) {
+	const goroutines, each = 16, 5_000
+
+	var wg sync.WaitGroup
+	out := make([][]int64, goroutines)
+	for g := range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			out[g] = make([]int64, each)
+			for i := range each {
+				id, err := typeid.NewInt64[orgPrefix]()
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				out[g][i] = id.Int64()
+			}
+		}()
+	}
+	wg.Wait()
+
+	seen := make(map[int64]struct{}, goroutines*each)
+	for _, vals := range out {
+		for _, v := range vals {
+			if _, dup := seen[v]; dup {
+				t.Fatalf("two goroutines both got %d", v)
+			}
+			seen[v] = struct{}{}
+		}
+	}
+}
+
+// Int64 and AnyInt64 draw from one sequence, so a value handed to one type is
+// never handed to another. Callers do not depend on this, but a future split
+// into per-prefix counters would silently weaken it.
+func TestInt64_UniqueAcrossPrefixesAndAnyInt64(t *testing.T) {
+	seen := make(map[int64]struct{}, 30_000)
+	add := func(v int64) {
+		if _, dup := seen[v]; dup {
+			t.Fatalf("value %d issued twice", v)
+		}
+		seen[v] = struct{}{}
+	}
+	for range 10_000 {
+		org, err := typeid.NewInt64[orgPrefix]()
+		if err != nil {
+			t.Fatal(err)
+		}
+		add(org.Int64())
+
+		any1, err := typeid.NewAnyInt64("txn")
+		if err != nil {
+			t.Fatal(err)
+		}
+		add(any1.Int64())
+
+		any2, err := typeid.NewAnyInt64("org")
+		if err != nil {
+			t.Fatal(err)
+		}
+		add(any2.Int64())
+	}
+}
+
+func BenchmarkNewInt64(b *testing.B) {
+	b.Run("serial", func(b *testing.B) {
+		for b.Loop() {
+			if _, err := typeid.NewInt64[orgPrefix](); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	// Every goroutine contends on the same high-water mark, so this is the
+	// worst case for the compare-and-swap.
+	b.Run("parallel", func(b *testing.B) {
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				if _, err := typeid.NewInt64[orgPrefix](); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	})
 }

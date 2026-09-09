@@ -1,7 +1,6 @@
 package typeid
 
 import (
-	"crypto/rand"
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
@@ -18,15 +17,11 @@ type AnyInt64 struct {
 }
 
 func NewAnyInt64(prefix string) (AnyInt64, error) {
-	ms := time.Now().UnixMilli()
-
-	var rb [2]byte
-	if _, err := rand.Read(rb[:]); err != nil {
-		return AnyInt64{}, fmt.Errorf("typeid: crypto/rand: %w", err)
+	v, err := nextInt64()
+	if err != nil {
+		return AnyInt64{}, err
 	}
-	r := int64(binary.BigEndian.Uint16(rb[:]) & 0x7FFF)
-
-	return AnyInt64{val: (ms << randomBits) | r, prefix: prefix}, nil
+	return AnyInt64{val: v, prefix: prefix}, nil
 }
 
 func AnyInt64From(prefix string, v int64) (AnyInt64, error) {

@@ -27,7 +27,7 @@ Both are UUIDv7-based and sort by creation time (no UUIDv4 — sortability gives
 | Type | Backing | Postgres | Suffix | When to use |
 |------|---------|----------|--------|--------------|
 | `UUID[P]` | 128 bit | `uuid` | 26 chars | Any throughput. Users, events, logs — use by default. |
-| `Int64[P]` | 63 bit | `BIGINT` | 13 chars | &lt;~100 IDs/sec. Orgs, tenants — compact IDs, 15 random bits; use UNIQUE + retry on conflict. |
+| `Int64[P]` | 63 bit | `BIGINT` | 13 chars | &lt;~100 IDs/sec. Orgs, tenants — compact IDs, 15 random bits; unique within a process, so add UNIQUE for the multi-process case. |
 
 Currently, the UUID type is backed by `github.com/google/uuid` but we plan to switch to [Go's `uuid` package.](https://github.com/golang/go/issues/62026) once available. This will likely be a breaking change before we release v1.
 
@@ -103,7 +103,9 @@ Both types implement:
 [48-bit unix ms timestamp][15-bit crypto/rand] = 63 bits, always positive
 ```
 
-Stored as Postgres `BIGINT`. Collision table: 10 IDs/sec → ~1 per 7,500 days; 100/sec → ~1 per 1.8 hours; 1,000/sec → ~1 per 65 seconds.
+Stored as Postgres `BIGINT`.
+
+15 random bits give only 32,768 values per millisecond, so two IDs drawn in the same millisecond collide about once per 32k pairs. `NewInt64` and `NewAnyInt64` therefore share one high-water mark per process and never return a value at or below the last one they issued, which makes a duplicate impossible within a process and makes its IDs strictly increasing. Two processes minting in the same millisecond still have only the random bits between them, so keep a UNIQUE constraint on the column.
 
 ## Benchmarks
 
