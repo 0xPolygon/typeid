@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"sync/atomic"
+	"sync"
 	"time"
 )
 
@@ -25,64 +25,95 @@ const randomBits = 15
 //
 // # Collision resistance
 //
-// 15 random bits leave only 32,768 values per millisecond, so two IDs drawn in
-// the same millisecond collide about once per 32k pairs. [NewInt64] closes that
-// gap inside a process: it remembers the highest value it has issued and never
-// returns that value or a lower one, so a single process cannot produce a
-// duplicate no matter how fast it mints.
+// 15 random bits leave only 32,768 values per millisecond, so two independent
+// draws in the same millisecond repeat about once per 32k pairs. [NewInt64] and
+// [NewAnyInt64] therefore remember the values this process has already issued in
+// the millisecond it is minting into, and draw again on a repeat. A duplicate
+// from one process is impossible as a result, and because every id is still a
+// uniform draw rather than a value derived from its predecessor, two processes
+// are no likelier to collide with each other than they were before.
 //
-// Across processes the random bits are all that separate two IDs drawn in the
-// same millisecond, and the birthday bound still applies: ~R²/65,536,000
-// expected collisions per second for R IDs/sec spread over N servers, falling
-// as 1/N compared to the same rate on one server. Protect with a UNIQUE
-// constraint. For high-throughput resources use [UUID] instead.
+// That leaves the cross-process case, where the random bits are all that
+// separate two ids drawn in the same millisecond: ~R²/65,536,000 expected
+// collisions per second for R ids/sec across all servers. Keep a UNIQUE
+// constraint on the column. For high-throughput resources use [UUID] instead.
 //
-// # Ordering (sortable)
+// # Ordering (k-sortable)
 //
-// IDs from one process are strictly increasing, because each value is either a
-// fresh timestamp-plus-random draw above the last one or the last one plus one.
-// Across processes they are k-sortable: the 48-bit timestamp dominates, so IDs
-// sort by creation time at millisecond granularity, and clock skew between
-// servers may reorder IDs within the skew window.
+// Ids are k-sortable: the 48-bit timestamp in the high bits dominates sort
+// order, so ids sort by creation time at millisecond granularity. Two ids from
+// the same millisecond are unordered relative to each other, but they cluster on
+// the same B-tree leaf pages, so Postgres insert locality is unaffected. Clock
+// skew between servers may produce out-of-order ids within that skew window.
 //
-// Two cases push a value past its own millisecond. A process that mints more
-// than 32,768 IDs in one millisecond borrows from the next, and a process whose
-// clock steps backwards keeps counting up from where it was. [Int64.GetTime]
-// then reports a time slightly ahead of the draw. Both are bounded by how far
-// the sequence ran ahead, and both are preferable to handing out a duplicate.
+// Two cases put a value in a millisecond it was not drawn in. A process that
+// fills one borrows the next, and a process whose clock steps backwards keeps
+// minting into the millisecond it had already reached rather than reusing values
+// it has handed out. [Int64.GetTime] then reports a time ahead of the draw. Both
+// need conditions you are unlikely to meet, and both beat a duplicate.
 type Int64[P Prefixer] struct {
 	val int64
 }
 
-// lastInt64 is the highest value this process has issued, shared by [Int64] and
-// [AnyInt64] and by every prefix, so that no two of them are ever equal.
-var lastInt64 atomic.Int64
+// nowMilli is a variable so tests can freeze the clock.
+var nowMilli = func() int64 { return time.Now().UnixMilli() }
 
-// nextInt64 draws a timestamp-plus-random value and lifts it above every value
-// this process has already handed out.
-func nextInt64() (int64, error) {
-	ms := time.Now().UnixMilli()
+// redrawLimit bounds the work in a single call. Sixteen repeats in a row means
+// the millisecond is around 90% spent, and moving to the next one costs less
+// than continuing to draw against it.
+const redrawLimit = 16
 
-	var rb [2]byte
-	if _, err := rand.Read(rb[:]); err != nil {
-		return 0, fmt.Errorf("typeid: crypto/rand: %w", err)
+// int64Sequence marks the values already issued in the millisecond this process
+// is minting into, one bit per value. [Int64] and [AnyInt64] share one, across
+// every prefix, so no two Int64 values from one process are ever equal whatever
+// their type.
+type int64Sequence struct {
+	mu    sync.Mutex
+	ms    int64
+	used  [1 << randomBits / 64]uint64
+	dirty []int64
+}
+
+var int64Seq int64Sequence
+
+func (s *int64Sequence) next() (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if ms := nowMilli(); ms > s.ms {
+		s.ms = ms
+		s.reset()
 	}
-	drawn := (ms << randomBits) | int64(binary.BigEndian.Uint16(rb[:])&0x7FFF)
-
 	for {
-		last := lastInt64.Load()
-		v := drawn
-		if v <= last {
-			v = last + 1
+		for range redrawLimit {
+			var rb [2]byte
+			if _, err := rand.Read(rb[:]); err != nil {
+				return 0, fmt.Errorf("typeid: crypto/rand: %w", err)
+			}
+			r := int64(binary.BigEndian.Uint16(rb[:]) & 0x7FFF)
+			if s.used[r/64]&(1<<(r%64)) != 0 {
+				continue
+			}
+			s.used[r/64] |= 1 << (r % 64)
+			s.dirty = append(s.dirty, r)
+			return s.ms<<randomBits | r, nil
 		}
-		if lastInt64.CompareAndSwap(last, v) {
-			return v, nil
-		}
+		s.ms++
+		s.reset()
 	}
 }
 
+// reset zeroes only the words a value was actually marked in, so its cost tracks
+// how many values the millisecond issued rather than the size of the range.
+func (s *int64Sequence) reset() {
+	for _, r := range s.dirty {
+		s.used[r/64] = 0
+	}
+	s.dirty = s.dirty[:0]
+}
+
 func NewInt64[P Prefixer]() (Int64[P], error) {
-	v, err := nextInt64()
+	v, err := int64Seq.next()
 	if err != nil {
 		return Int64[P]{}, err
 	}

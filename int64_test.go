@@ -598,9 +598,9 @@ func FuzzInt64_UnmarshalCBOR(f *testing.F) {
 	id, _ := typeid.NewInt64[orgPrefix]()
 	data, _ := id.MarshalCBOR()
 	f.Add(data)
-	f.Add([]byte{0xd8, 0x27, 0x05})        // tag 39 + inline uint 5
+	f.Add([]byte{0xd8, 0x27, 0x05})       // tag 39 + inline uint 5
 	f.Add([]byte{0xd8, 0x27, 0x18, 0x2a}) // tag 39 + 1-byte uint 42
-	f.Add([]byte{})                        // empty
+	f.Add([]byte{})                       // empty
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		var id OrgID
@@ -610,8 +610,8 @@ func FuzzInt64_UnmarshalCBOR(f *testing.F) {
 }
 
 // TestInt64_UniqueUnderBurst is the regression test for the collision this
-// generator used to allow. Before the high-water mark existed, minting this
-// many IDs in one process produced thousands of duplicates, because 15 random
+// generator used to allow. Before the issued-value set existed, minting this
+// many ids in one process produced thousands of duplicates, because 15 random
 // bits give only 32,768 distinct values per millisecond.
 func TestInt64_UniqueUnderBurst(t *testing.T) {
 	const n = 200_000
@@ -628,25 +628,9 @@ func TestInt64_UniqueUnderBurst(t *testing.T) {
 	}
 }
 
-func TestInt64_StrictlyIncreasing(t *testing.T) {
-	prev, err := typeid.NewInt64[orgPrefix]()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i := range 100_000 {
-		id, err := typeid.NewInt64[orgPrefix]()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if id.Int64() <= prev.Int64() {
-			t.Fatalf("mint %d did not advance: %d after %d", i, id.Int64(), prev.Int64())
-		}
-		prev = id
-	}
-}
-
-// TestInt64_UniqueUnderConcurrency exercises the compare-and-swap. Run it with
-// -race: a lost update would let two goroutines settle on the same value.
+// TestInt64_UniqueUnderConcurrency exercises the lock around the issued-value
+// set. Run it with -race: a goroutine reading the set while another writes it
+// would let both settle on the same value.
 func TestInt64_UniqueUnderConcurrency(t *testing.T) {
 	const goroutines, each = 16, 5_000
 

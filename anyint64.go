@@ -17,7 +17,7 @@ type AnyInt64 struct {
 }
 
 func NewAnyInt64(prefix string) (AnyInt64, error) {
-	v, err := nextInt64()
+	v, err := int64Seq.next()
 	if err != nil {
 		return AnyInt64{}, err
 	}

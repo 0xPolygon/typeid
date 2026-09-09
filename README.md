@@ -105,7 +105,7 @@ Both types implement:
 
 Stored as Postgres `BIGINT`.
 
-15 random bits give only 32,768 values per millisecond, so two IDs drawn in the same millisecond collide about once per 32k pairs. `NewInt64` and `NewAnyInt64` therefore share one high-water mark per process and never return a value at or below the last one they issued, which makes a duplicate impossible within a process and makes its IDs strictly increasing. Two processes minting in the same millisecond still have only the random bits between them, so keep a UNIQUE constraint on the column.
+15 random bits give only 32,768 values per millisecond, so two independent draws in the same millisecond repeat about once per 32k pairs. `NewInt64` and `NewAnyInt64` therefore share a record of the values the process has already issued in the millisecond it is minting into, and draw again on a repeat. That makes a duplicate impossible within a process while leaving every ID a uniform draw, which is what keeps two processes no likelier to collide with each other than they were before. They still have only the random bits between them, so keep a UNIQUE constraint on the column.
 
 ## Benchmarks
 
