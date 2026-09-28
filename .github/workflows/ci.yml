@@ -13,4 +13,7 @@ jobs:
             - uses: actions/setup-go@v6
               with:
                   go-version-file: go.mod
-            - run: go test ./...
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: '24'
+            - run: make test vet
